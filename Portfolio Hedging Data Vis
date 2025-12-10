@@ -1,1 +1,1057 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HedgeGuard Analytics</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Chart.js Annotation Plugin for the Beta Shading -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
 
+    <!-- Google Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chart-container { position: relative; height: 100%; width: 100%; }
+        
+        /* Custom Scrollbar */
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        /* Loader Animation */
+        .typing-dot {
+            animation: typing 1.4s infinite ease-in-out both;
+        }
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        
+        @keyframes typing {
+            0%, 80%, 100% { transform: scale(0); }
+            40% { transform: scale(1); }
+        }
+        
+        /* Table Row Selection */
+        .selected-row {
+            background-color: #e0e7ff !important; /* Indigo 50 */
+            border-left: 4px solid #4f46e5;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <!-- Global State & Logic -->
+    <script>
+        // --- Configuration ---
+        const apiKey = ""; // API Key injected by environment
+        let GLOBAL_DATA = null;
+        let GLOBAL_RETURNS = null;
+        let STRATEGY_DATA = null; // Store for stress test access
+        let STRESS_EVENTS = null; // Store identified stress events
+        let INITIAL_INVESTMENT = 100000;
+        let STATIC_RATIO = 1.0;
+        let SELECTED_STRESS_INDEX = null;
+        
+        // Chart Instances
+        let charts = {};
+
+        // --- 1. Math & Data Parsing ---
+
+        const parseCSV = (text) => {
+            const lines = text.trim().split('\n');
+            if (lines.length < 2) return null;
+            
+            const data = [];
+            for (let i = 1; i < lines.length; i++) {
+                const cols = lines[i].split(',').map(c => c.trim());
+                if (cols.length < 3) continue;
+                
+                const dateStr = cols[0];
+                const dateObj = new Date(dateStr);
+                const cleanNum = (val) => parseFloat(val.replace(/[",\$]/g, ''));
+                
+                const portfolioClose = cleanNum(cols[1]);
+                const hedgeClose = cleanNum(cols[2]);
+
+                if (!isNaN(portfolioClose) && !isNaN(hedgeClose)) {
+                    data.push({
+                        date: dateObj,
+                        dateStr: dateStr, 
+                        portfolio: portfolioClose,
+                        hedge: hedgeClose
+                    });
+                }
+            }
+            return data.sort((a, b) => a.date - b.date);
+        };
+
+        const calculateReturns = (data) => {
+            const returns = [];
+            for (let i = 1; i < data.length; i++) {
+                const today = data[i];
+                const prev = data[i-1];
+                
+                const rPort = (today.portfolio - prev.portfolio) / prev.portfolio;
+                const rHedge = (today.hedge - prev.hedge) / prev.hedge;
+                
+                returns.push({
+                    date: today.date,
+                    dateStr: today.dateStr,
+                    rPort,
+                    rHedge
+                });
+            }
+            return returns;
+        };
+
+        const calculateRollingBeta = (returns, windowSize = 60) => {
+            const betas = new Array(returns.length).fill(null);
+            for (let i = windowSize; i < returns.length; i++) {
+                const windowData = returns.slice(i - windowSize, i);
+                const meanPort = windowData.reduce((sum, d) => sum + d.rPort, 0) / windowSize;
+                const meanHedge = windowData.reduce((sum, d) => sum + d.rHedge, 0) / windowSize;
+                
+                let cov = 0;
+                let varHedge = 0;
+                windowData.forEach(d => {
+                    cov += (d.rPort - meanPort) * (d.rHedge - meanHedge);
+                    varHedge += (d.rHedge - meanHedge) ** 2;
+                });
+                betas[i] = varHedge === 0 ? 0 : cov / varHedge;
+            }
+            const firstValid = betas.find(b => b !== null) || 1;
+            for(let i=0; i<windowSize; i++) betas[i] = firstValid;
+            return betas;
+        };
+
+        const calculateStrategyPerformance = (returns, rollingBetas, staticRatio, initialInvestment) => {
+            let navUnhedged = initialInvestment;
+            let navStatic = initialInvestment;
+            let navDynamic = initialInvestment;
+            
+            let peakUnhedged = initialInvestment;
+            let peakStatic = initialInvestment;
+            let peakDynamic = initialInvestment;
+
+            return returns.map((day, idx) => {
+                const rUnhedged = day.rPort;
+                const rStatic = day.rPort - (staticRatio * day.rHedge);
+                const dailyBeta = idx > 0 ? rollingBetas[idx-1] : rollingBetas[0];
+                const rDynamic = day.rPort - (dailyBeta * day.rHedge);
+
+                navUnhedged *= (1 + rUnhedged);
+                navStatic *= (1 + rStatic);
+                navDynamic *= (1 + rDynamic);
+
+                peakUnhedged = Math.max(peakUnhedged, navUnhedged);
+                peakStatic = Math.max(peakStatic, navStatic);
+                peakDynamic = Math.max(peakDynamic, navDynamic);
+
+                return {
+                    date: day.date,
+                    displayDate: day.date.toLocaleDateString(),
+                    unhedged: parseFloat(navUnhedged.toFixed(2)),
+                    static: parseFloat(navStatic.toFixed(2)),
+                    dynamic: parseFloat(navDynamic.toFixed(2)),
+                    ddUnhedged: (navUnhedged / peakUnhedged) - 1,
+                    ddStatic: (navStatic / peakStatic) - 1,
+                    ddDynamic: (navDynamic / peakDynamic) - 1,
+                    rUnhedged, rStatic, rDynamic,
+                    originalIndex: idx // Keep track for stress test lookup
+                };
+            });
+        };
+
+        const calculateKPIs = (strategyData, initialInvestment) => {
+            const computeFor = (key, rKey) => {
+                const n = strategyData.length;
+                if (n === 0) return { ret: 0, vol: 0, sharpe: 0, dd: 0 };
+                
+                const totalReturn = (strategyData[n-1][key] / initialInvestment) - 1;
+                const annReturn = Math.pow(1 + totalReturn, 252/n) - 1;
+                
+                const meanR = strategyData.reduce((s, d) => s + d[rKey], 0) / n;
+                const variance = strategyData.reduce((s, d) => s + (d[rKey] - meanR)**2, 0) / n;
+                const annVol = Math.sqrt(variance) * Math.sqrt(252);
+                
+                const maxDD = Math.min(...strategyData.map(d => d[`dd${key.charAt(0).toUpperCase() + key.slice(1)}`]));
+
+                return {
+                    ret: (annReturn * 100).toFixed(1) + '%',
+                    retVal: annReturn * 100,
+                    vol: (annVol * 100).toFixed(1) + '%',
+                    volVal: annVol * 100,
+                    sharpe: (annVol === 0 ? 0 : annReturn / annVol).toFixed(2),
+                    dd: (maxDD * 100).toFixed(1) + '%',
+                    ddVal: maxDD * 100
+                };
+            };
+
+            return {
+                unhedged: computeFor('unhedged', 'rUnhedged'),
+                static: computeFor('static', 'rStatic'),
+                dynamic: computeFor('dynamic', 'rDynamic')
+            };
+        };
+
+        const getStressEvents = (strategyData) => {
+            // Find worst 5 days for unhedged
+            return [...strategyData]
+                .sort((a, b) => a.rUnhedged - b.rUnhedged)
+                .slice(0, 5);
+        };
+
+        // --- Data Helpers ---
+        const getMonthlyReturns = (returns) => {
+            const months = {}; 
+            returns.forEach(r => {
+                const k = `${r.date.getFullYear()}-${String(r.date.getMonth()+1).padStart(2, '0')}`;
+                if (!months[k]) months[k] = 1.0;
+                months[k] *= (1 + r.rPort);
+            });
+            const pivot = {};
+            Object.entries(months).forEach(([k, v]) => {
+                const [y, m] = k.split('-');
+                if (!pivot[y]) pivot[y] = Array(12).fill(null);
+                pivot[y][parseInt(m)-1] = (v - 1) * 100;
+            });
+            return pivot;
+        };
+
+        const getMonthlyBoxPlotData = (returns) => {
+            const months = {};
+            const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            returns.forEach(r => {
+                const mIndex = r.date.getMonth();
+                if (!months[mIndex]) months[mIndex] = [];
+                months[mIndex].push(r.rPort * 100);
+            });
+            return Object.entries(months).map(([mIndex, values]) => {
+                values.sort((a, b) => a - b);
+                return { 
+                    month: monthNames[parseInt(mIndex)], 
+                    min: values[0], 
+                    max: values[values.length - 1],
+                    q1: values[Math.floor(values.length * 0.25)],
+                    median: values[Math.floor(values.length * 0.5)],
+                    q3: values[Math.floor(values.length * 0.75)]
+                };
+            }).sort((a, b) => monthNames.indexOf(a.month) - monthNames.indexOf(b.month));
+        };
+
+        const getHistogramData = (returns) => {
+            const values = returns.map(r => r.rPort * 100);
+            const min = Math.floor(Math.min(...values));
+            const max = Math.ceil(Math.max(...values));
+            const binSize = 0.5;
+            const bins = {};
+            for (let i = min; i <= max; i += binSize) bins[i.toFixed(1)] = 0;
+            values.forEach(v => {
+                const binKey = (Math.floor(v / binSize) * binSize).toFixed(1);
+                if (bins[binKey] !== undefined) bins[binKey]++;
+            });
+            return Object.entries(bins).map(([range, count]) => ({ range, count, val: parseFloat(range) })).sort((a, b) => a.val - b.val);
+        };
+
+        // --- Gemini AI Integration (FIXED) ---
+        async function askAI(type, dataContext, btnElement) {
+            const tooltipId = `ai-tooltip-${type}`;
+            const existingTooltip = document.getElementById(tooltipId);
+            
+            if (existingTooltip) {
+                existingTooltip.remove();
+                return;
+            }
+
+            // Create Tooltip UI - Attached to BODY to avoid clipping
+            const tooltip = document.createElement('div');
+            tooltip.id = tooltipId;
+            tooltip.className = "absolute z-[9999] w-72 bg-slate-800 text-white text-xs p-4 rounded-lg shadow-xl border border-slate-700";
+            
+            // Positioning Logic
+            const rect = btnElement.getBoundingClientRect();
+            const scrollTop = window.pageYOffset || document.documentElement.scrollTop;
+            
+            // Position above the button by default
+            tooltip.style.top = `${rect.top + scrollTop - 10}px`; 
+            tooltip.style.left = `${rect.left}px`;
+            tooltip.style.transform = "translateY(-100%)"; // Shift up by its own height
+
+            tooltip.innerHTML = `
+                <div class="flex justify-between items-start mb-2 border-b border-slate-700 pb-2">
+                    <span class="font-bold text-indigo-300 flex items-center gap-2"><i data-lucide="bot" class="w-3 h-3"></i> Gemini Insight</span>
+                    <button onclick="document.getElementById('${tooltipId}').remove()" class="text-slate-400 hover:text-white"><i data-lucide="x" class="w-3 h-3"></i></button>
+                </div>
+                <div id="ai-content-${type}" class="leading-relaxed">
+                    <div class="flex items-center gap-2 text-slate-400 py-2">
+                        <div class="w-2 h-2 bg-indigo-400 rounded-full typing-dot"></div>
+                        <div class="w-2 h-2 bg-indigo-400 rounded-full typing-dot"></div>
+                        <div class="w-2 h-2 bg-indigo-400 rounded-full typing-dot"></div>
+                        Analyzing...
+                    </div>
+                </div>
+                <div class="absolute bottom-[-6px] left-4 w-3 h-3 bg-slate-800 border-r border-b border-slate-700 rotate-45"></div>
+            `;
+            
+            document.body.appendChild(tooltip); // Attach to body
+            lucide.createIcons();
+
+            // Fetch
+            const prompt = `You are a financial analyst expert. Analyze the following data for a hedge fund dashboard. Keep it brief (2 sentences max) and insightful. Context: ${type}. Data Summary: ${JSON.stringify(dataContext)}`;
+
+            try {
+                const response = await fetch(
+                    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`,
+                    {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+                    }
+                );
+                const result = await response.json();
+                const text = result.candidates?.[0]?.content?.parts?.[0]?.text || "Could not generate insight.";
+                const contentEl = document.getElementById(`ai-content-${type}`);
+                if(contentEl) contentEl.innerText = text;
+            } catch (error) {
+                const contentEl = document.getElementById(`ai-content-${type}`);
+                if(contentEl) contentEl.innerText = "Error connecting to AI service.";
+            }
+        }
+    </script>
+
+    <!-- VIEWS -->
+
+    <!-- 1. Upload View -->
+    <div id="view-upload" class="flex flex-col items-center justify-center min-h-screen">
+        <div class="p-10 bg-white shadow-xl rounded-2xl text-center max-w-lg w-full border border-slate-200">
+            <div class="bg-indigo-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i data-lucide="upload" class="w-8 h-8 text-indigo-600"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-slate-800 mb-2">Upload Data File</h1>
+            <p class="text-slate-500 mb-8">Upload your CSV containing <strong>Date</strong>, <strong>Portfolio Close</strong>, and <strong>Hedge Close</strong>.</p>
+            <label class="block w-full cursor-pointer group">
+                <input type="file" id="csvFile" class="hidden" accept=".csv" />
+                <div class="flex items-center justify-center w-full py-4 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-md shadow-indigo-200">
+                    <i data-lucide="file-text" class="w-5 h-5 mr-2"></i> Select CSV File
+                </div>
+            </label>
+            <p class="mt-4 text-xs text-slate-400">Supported formats: CSV. Auto-detection enabled.</p>
+        </div>
+    </div>
+
+    <!-- 2. Investment View -->
+    <div id="view-investment" class="hidden flex flex-col items-center justify-center min-h-screen">
+        <div class="p-10 bg-white shadow-xl rounded-2xl text-center max-w-lg w-full border border-slate-200">
+            <div class="bg-indigo-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+                <i data-lucide="dollar-sign" class="w-8 h-8 text-indigo-600"></i>
+            </div>
+            <h1 class="text-2xl font-bold text-slate-800 mb-2">Initial Investment</h1>
+            <p class="text-slate-500 mb-8">How much capital would you like to simulate?</p>
+            <div class="mb-6 relative">
+                <span class="absolute left-4 top-3 text-slate-400">$</span>
+                <input type="number" id="investInput" value="100000" class="w-full pl-8 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition font-mono text-lg" />
+            </div>
+            <button onclick="startDashboard()" class="w-full py-4 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-md shadow-indigo-200 flex items-center justify-center gap-2">
+                Start Analysis <i data-lucide="arrow-right" class="w-5 h-5"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- 3. Dashboard View -->
+    <div id="view-dashboard" class="hidden min-h-screen pb-20">
+        <!-- Header -->
+        <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i data-lucide="shield" class="w-6 h-6 text-indigo-600"></i>
+                    <h1 class="text-xl font-bold text-slate-800">HedgeGuard <span class="font-light text-slate-400">Analytics</span></h1>
+                </div>
+                <div class="text-sm text-slate-500 flex items-center gap-4">
+                    <span>Investment: <strong id="display-invest"></strong></span>
+                    <span class="h-4 w-px bg-slate-300"></span>
+                    <span id="display-days"></span>
+                </div>
+            </div>
+        </header>
+
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+            
+            <!-- Section 1: Portfolio DNA -->
+            <section class="space-y-6">
+                <div class="flex items-center gap-2 mb-4">
+                    <i data-lucide="activity" class="w-5 h-5 text-indigo-500"></i>
+                    <h2 class="text-lg font-bold text-slate-800">Portfolio DNA (Unhedged)</h2>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    
+                    <!-- Monthly Heatmap -->
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-sm font-semibold text-slate-500">Monthly Return Matrix</h3>
+                            <div class="relative inline-block ml-2">
+                                <button onclick="askAI('heatmap', getMonthlyReturns(GLOBAL_RETURNS), this)" class="flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full hover:bg-indigo-100 transition">
+                                    <i data-lucide="bot" class="w-3 h-3"></i> Ask AI
+                                </button>
+                            </div>
+                        </div>
+                        <div id="heatmap-container" class="overflow-x-auto">
+                            <!-- Heatmap Table Injected Here -->
+                        </div>
+                    </div>
+
+                    <!-- Monthly Box Plot (Dispersion) -->
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-sm font-semibold text-slate-500">Monthly Return Dispersion</h3>
+                            <button onclick="askAI('boxplot', getMonthlyBoxPlotData(GLOBAL_RETURNS), this)" class="flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full hover:bg-indigo-100 transition">
+                                <i data-lucide="bot" class="w-3 h-3"></i> Ask AI
+                            </button>
+                        </div>
+                        <div class="h-64 chart-container">
+                            <canvas id="chartDispersion"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Histogram -->
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-sm font-semibold text-slate-500">Daily Return Histogram (Fat Tails)</h3>
+                            <button onclick="askAI('histogram', getHistogramData(GLOBAL_RETURNS).slice(0,10), this)" class="flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full hover:bg-indigo-100 transition">
+                                <i data-lucide="bot" class="w-3 h-3"></i> Ask AI
+                            </button>
+                        </div>
+                        <div class="h-64 chart-container">
+                            <canvas id="chartHistogram"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- 90-Day Rolling Beta -->
+                    <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
+                        <div class="flex justify-between items-center mb-6">
+                            <h3 class="text-sm font-semibold text-slate-500">90-Day Rolling Beta</h3>
+                            <button onclick="askAI('beta', {info: '90 day rolling beta'}, this)" class="flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full hover:bg-indigo-100 transition">
+                                <i data-lucide="bot" class="w-3 h-3"></i> Ask AI
+                            </button>
+                        </div>
+                        <div class="h-64 chart-container">
+                            <canvas id="chartBeta"></canvas>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- Section 2: Strategy Lab -->
+            <section id="strategy-lab" class="space-y-6 pt-8 border-t border-slate-200">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
+                    <div class="flex items-center gap-2">
+                        <i data-lucide="settings" class="w-5 h-5 text-indigo-500"></i>
+                        <h2 class="text-lg font-bold text-slate-800">Strategy Lab</h2>
+                    </div>
+                    
+                    <div class="bg-white px-4 py-2 flex items-center gap-4 shadow-sm border border-indigo-100 rounded-lg">
+                        <span class="text-sm font-medium text-slate-600 flex items-center gap-2">
+                            <i data-lucide="mouse-pointer-2" class="w-4 h-4"></i> Static Hedge Ratio:
+                        </span>
+                        <input type="range" id="ratioSlider" min="0.0" max="2.0" step="0.05" value="1.0" class="w-32 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                        <span id="ratioDisplay" class="text-sm font-bold text-indigo-600 w-12 text-right">1.00x</span>
+                    </div>
+                </div>
+
+                <!-- KPI Cards Container -->
+                <div id="kpi-container" class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <!-- Cards injected via JS -->
+                </div>
+
+                <!-- AI Insight Box -->
+                <div class="bg-indigo-50 border border-indigo-100 rounded-lg p-4 flex items-start gap-3">
+                    <i data-lucide="info" class="w-5 h-5 text-indigo-600 mt-0.5 flex-shrink-0"></i>
+                    <div id="dynamicInsight" class="text-sm text-indigo-900">
+                        <!-- Insight Text -->
+                    </div>
+                </div>
+
+                <!-- Performance Chart -->
+                <div class="bg-white p-6 h-[400px] rounded-xl border border-slate-200 shadow-sm">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-sm font-semibold text-slate-500">Cumulative Growth</h3>
+                        <button onclick="askAI('perf', {}, this)" class="flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full hover:bg-indigo-100 transition">
+                            <i data-lucide="bot" class="w-3 h-3"></i> Ask AI
+                        </button>
+                    </div>
+                    <div class="chart-container" style="height: 320px;">
+                        <canvas id="chartPerformance"></canvas>
+                    </div>
+                </div>
+
+                <!-- Drawdown Chart -->
+                <div class="bg-white p-6 h-[340px] rounded-xl border border-slate-200 shadow-sm">
+                    <div class="flex justify-between items-center mb-6">
+                        <div class="flex items-center gap-4">
+                            <h3 class="text-sm font-semibold text-slate-500">Drawdown Analysis (Risk Depth)</h3>
+                            <!-- Legend for Drawdown -->
+                            <div class="flex gap-3 text-xs flex-wrap">
+                                <span class="flex items-center gap-1"><div class="w-3 h-3 bg-red-500 bg-opacity-50 rounded-sm"></div> Unhedged (Risk)</span>
+                                <span class="flex items-center gap-1"><div class="w-3 h-3 bg-green-500 rounded-sm"></div> Static Hedge</span>
+                                <span class="flex items-center gap-1"><div class="w-3 h-3 bg-purple-500 rounded-sm border border-purple-200"></div> Dynamic Hedge</span>
+                            </div>
+                        </div>
+                        <button onclick="askAI('dd', {}, this)" class="flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full hover:bg-indigo-100 transition">
+                            <i data-lucide="bot" class="w-3 h-3"></i> Ask AI
+                        </button>
+                    </div>
+                    <div class="chart-container" style="height: 250px;">
+                        <canvas id="chartDrawdown"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Section 3: Stress Tests (Restored) -->
+            <section class="pt-8 border-t border-slate-200">
+                <div class="flex items-center gap-2 mb-6">
+                    <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500"></i>
+                    <h2 class="text-lg font-bold text-slate-800">Stress Test: Worst 5 Days</h2>
+                </div>
+                
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <!-- Table -->
+                    <div class="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                        <div class="p-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                            <span class="text-xs font-semibold text-slate-500 uppercase">Click a row to analyze event</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left">
+                                <thead class="bg-slate-50 text-slate-500 font-medium">
+                                    <tr>
+                                        <th class="p-4">Date</th>
+                                        <th class="p-4">Unhedged Return</th>
+                                        <th class="p-4">Hedge Impact</th>
+                                        <th class="p-4">Static Result</th>
+                                        <th class="p-4">Dynamic Result</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="stress-table-body" class="divide-y divide-slate-100">
+                                    <!-- Rows injected via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Drill Down Chart -->
+                    <div class="lg:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col">
+                        <div class="flex justify-between items-center mb-4">
+                            <h3 class="text-sm font-semibold text-slate-500">Event Replay (+/- 10 Days)</h3>
+                        </div>
+                        <div id="drill-chart-container" class="flex-1 h-48 relative">
+                            <div id="drill-empty" class="absolute inset-0 flex items-center justify-center text-slate-400 text-xs text-center p-8 border-2 border-dashed border-slate-100 rounded-lg">
+                                Select a crash event from the table to see how the hedge performed before and after the shock.
+                            </div>
+                            <canvas id="chartDrillDown" class="hidden"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- MAIN APP LOGIC -->
+    <script>
+        // --- Event Listeners ---
+        document.getElementById('csvFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (evt) => {
+                const parsed = parseCSV(evt.target.result);
+                if (parsed) {
+                    GLOBAL_DATA = parsed;
+                    GLOBAL_RETURNS = calculateReturns(parsed);
+                    document.getElementById('view-upload').classList.add('hidden');
+                    document.getElementById('view-investment').classList.remove('hidden');
+                } else {
+                    alert('Invalid CSV format');
+                }
+            };
+            reader.readAsText(file);
+        });
+
+        function startDashboard() {
+            INITIAL_INVESTMENT = parseFloat(document.getElementById('investInput').value) || 100000;
+            document.getElementById('view-investment').classList.add('hidden');
+            document.getElementById('view-dashboard').classList.remove('hidden');
+            
+            // Header Info
+            document.getElementById('display-invest').textContent = `$${INITIAL_INVESTMENT.toLocaleString()}`;
+            document.getElementById('display-days').textContent = `${GLOBAL_DATA.length} days`;
+            
+            // Init Dashboard
+            renderStaticVisuals();
+            updateStrategy(1.0);
+            
+            lucide.createIcons();
+        }
+
+        document.getElementById('ratioSlider').addEventListener('input', (e) => {
+            const val = parseFloat(e.target.value);
+            document.getElementById('ratioDisplay').textContent = val.toFixed(2) + 'x';
+            updateStrategy(val);
+        });
+
+        // --- Rendering Functions ---
+
+        function renderStaticVisuals() {
+            renderHeatmap();
+            renderDispersionChart();
+            renderHistogramChart();
+            renderBetaChart();
+        }
+
+        function renderHeatmap() {
+            const monthly = getMonthlyReturns(GLOBAL_RETURNS);
+            const years = Object.keys(monthly).sort();
+            const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+            
+            let html = `<table class="w-full text-xs text-center border-collapse"><thead><tr><th class="p-2 text-left text-slate-400 font-medium">Year</th>`;
+            months.forEach(m => html += `<th class="p-2 text-slate-400 font-medium">${m}</th>`);
+            html += `</tr></thead><tbody>`;
+
+            years.forEach(year => {
+                html += `<tr class="border-t border-slate-100 hover:bg-slate-50"><td class="p-2 text-left font-bold text-slate-600">${year}</td>`;
+                monthly[year].forEach(val => {
+                    let color = "bg-slate-50 text-slate-300";
+                    let text = "-";
+                    if (val !== null) {
+                        text = val.toFixed(1) + '%';
+                        if (val > 5) color = "bg-emerald-500 text-white";
+                        else if (val > 2) color = "bg-emerald-400 text-white";
+                        else if (val > 0) color = "bg-emerald-200 text-emerald-900";
+                        else if (val > -2) color = "bg-rose-200 text-rose-900";
+                        else if (val > -5) color = "bg-rose-400 text-white";
+                        else color = "bg-rose-600 text-white";
+                    }
+                    html += `<td class="p-1"><div class="w-full h-8 flex items-center justify-center rounded ${color}">${text}</div></td>`;
+                });
+                html += `</tr>`;
+            });
+            html += `</tbody></table>`;
+            document.getElementById('heatmap-container').innerHTML = html;
+        }
+
+        function renderDispersionChart() {
+            const data = getMonthlyBoxPlotData(GLOBAL_RETURNS);
+            const ctx = document.getElementById('chartDispersion').getContext('2d');
+            
+            // Combined Chart to simulate Box (Bar) and Whiskers/Outliers (Scatter)
+            // Replicating React version: Q1-Q3 as Bar, Min/Max/Median as scatter points
+            new Chart(ctx, {
+                data: {
+                    labels: data.map(d => d.month),
+                    datasets: [
+                        {
+                            type: 'bar',
+                            label: 'IQR (Q1-Q3)',
+                            data: data.map(d => [d.q1, d.q3]),
+                            backgroundColor: '#94a3b8',
+                            barPercentage: 0.5,
+                            borderRadius: 2,
+                            order: 2
+                        },
+                        {
+                            type: 'scatter',
+                            label: 'Median',
+                            data: data.map(d => d.median),
+                            backgroundColor: '#312e81', // Indigo
+                            pointStyle: 'rectRot',
+                            pointRadius: 5,
+                            order: 1
+                        },
+                        {
+                            type: 'scatter',
+                            label: 'Max',
+                            data: data.map(d => d.max),
+                            backgroundColor: '#10b981', // Emerald
+                            pointStyle: 'circle',
+                            pointRadius: 4,
+                            order: 1
+                        },
+                        {
+                            type: 'scatter',
+                            label: 'Min',
+                            data: data.map(d => d.min),
+                            backgroundColor: '#f43f5e', // Rose
+                            pointStyle: 'circle',
+                            pointRadius: 4,
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { display: false }, 
+                        tooltip: { 
+                            callbacks: { 
+                                label: (ctx) => {
+                                    if(ctx.dataset.type === 'bar') return `IQR: ${ctx.raw[0].toFixed(1)}% to ${ctx.raw[1].toFixed(1)}%`;
+                                    return `${ctx.dataset.label}: ${ctx.raw.toFixed(2)}%`;
+                                } 
+                            } 
+                        } 
+                    },
+                    scales: { 
+                        y: { ticks: { callback: v => v + '%' } }, 
+                        x: { grid: { display: false } } 
+                    },
+                    layout: { padding: { bottom: 20 } }
+                }
+            });
+        }
+
+        function renderHistogramChart() {
+            const data = getHistogramData(GLOBAL_RETURNS);
+            const ctx = document.getElementById('chartHistogram').getContext('2d');
+            
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: data.map(d => d.range),
+                    datasets: [{
+                        label: 'Frequency',
+                        data: data.map(d => d.count),
+                        backgroundColor: '#6366f1',
+                        borderRadius: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: { 
+                        x: { 
+                            ticks: { maxRotation: 0, minRotation: 0, autoSkip: true, font: {size: 10} },
+                            grid: { display: false }
+                        } 
+                    },
+                    plugins: { legend: { display: false } },
+                    layout: { padding: { bottom: 20 } }
+                }
+            });
+        }
+
+        function renderBetaChart() {
+            const betas = calculateRollingBeta(GLOBAL_RETURNS, 90);
+            const slicedBetas = betas.slice(90);
+            const labels = GLOBAL_RETURNS.map(r => r.dateStr).slice(90);
+            const ctx = document.getElementById('chartBeta').getContext('2d');
+
+            // Find Max for the Shaded Region to prevent "All Red" scaling issue
+            const maxBeta = Math.max(...slicedBetas);
+
+            new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: '90-Day Rolling Beta',
+                        data: slicedBetas,
+                        borderColor: '#334155',
+                        borderWidth: 2,
+                        pointRadius: 0,
+                        tension: 0.1,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        annotation: {
+                            annotations: {
+                                // Background Box: Beta > 1.0 to Actual Max
+                                highBetaZone: {
+                                    type: 'box',
+                                    yMin: 1.0,
+                                    yMax: maxBeta * 1.05, // FIXED: Set to data max + 5% buffer, NOT 100
+                                    backgroundColor: 'rgba(244, 63, 94, 0.1)', // Light Red tint
+                                    borderWidth: 0,
+                                    label: {
+                                        content: 'High Beta Zone (>1.0)',
+                                        display: true,
+                                        position: 'start',
+                                        color: '#ef4444',
+                                        font: { size: 10 }
+                                    }
+                                },
+                                // Threshold Line
+                                line1: {
+                                    type: 'line',
+                                    yMin: 1,
+                                    yMax: 1,
+                                    borderColor: '#ef4444',
+                                    borderWidth: 1,
+                                    borderDash: [5, 5]
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { ticks: { maxTicksLimit: 10, maxRotation: 0 } }, 
+                        y: { title: { display: true, text: 'Beta to Hedge' } }
+                    },
+                    layout: { padding: { bottom: 20 } }
+                }
+            });
+        }
+
+        // --- Dynamic Strategy Rendering ---
+
+        function updateStrategy(ratio) {
+            STATIC_RATIO = ratio;
+            
+            const rollingBetas = calculateRollingBeta(GLOBAL_RETURNS, 60);
+            STRATEGY_DATA = calculateStrategyPerformance(GLOBAL_RETURNS, rollingBetas, ratio, INITIAL_INVESTMENT);
+            STRESS_EVENTS = getStressEvents(STRATEGY_DATA);
+            
+            const kpis = calculateKPIs(STRATEGY_DATA, INITIAL_INVESTMENT);
+            
+            updateKPICards(kpis, ratio);
+            renderPerformanceChart(STRATEGY_DATA);
+            renderDrawdownChart(STRATEGY_DATA);
+            renderStressTable(); // New: Update table when ratio changes
+            
+            // If we have a selected stress event, update its chart too
+            if (SELECTED_STRESS_INDEX !== null) {
+                renderDrillDown(SELECTED_STRESS_INDEX);
+            }
+            
+            // Insight Text
+            const volReduction = (1 - (kpis.static.volVal / kpis.unhedged.volVal)) * 100;
+            const returnCost = (kpis.unhedged.retVal - kpis.static.retVal);
+            document.getElementById('dynamicInsight').innerHTML = `
+                <strong>Insight:</strong> At a ratio of <strong>${ratio.toFixed(2)}x</strong>, the static hedge 
+                reduces annual volatility by <span class="font-bold">${volReduction.toFixed(1)}%</span>. 
+                "Cost": <strong>${returnCost.toFixed(1)}%</strong> in annual returns.
+                ${kpis.static.ddVal > -15 ? "Excellent downside protection." : "Drawdown still significant."}
+            `;
+        }
+
+        function updateKPICards(kpis, ratio) {
+            const container = document.getElementById('kpi-container');
+            const makeCard = (title, data, highlight) => `
+                <div class="p-6 rounded-xl border shadow-sm transition-all hover:-translate-y-0.5 ${highlight ? 'border-indigo-200 bg-indigo-50/30' : 'bg-white border-slate-200'}">
+                    <h3 class="text-sm font-semibold text-slate-500 uppercase tracking-wider mb-4 flex items-center gap-2">
+                        ${title} ${highlight ? '<span class="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">Active</span>' : ''}
+                    </h3>
+                    <div class="space-y-4">
+                        <div class="flex justify-between items-baseline">
+                            <span class="text-slate-600 text-sm">Ann. Return</span>
+                            <span class="text-xl font-bold ${parseFloat(data.ret) >= 0 ? 'text-emerald-600' : 'text-red-600'}">${data.ret}</span>
+                        </div>
+                        <div class="flex justify-between items-baseline">
+                            <span class="text-slate-600 text-sm">Max Drawdown</span>
+                            <span class="text-xl font-bold text-rose-600">${data.dd}</span>
+                        </div>
+                        <div class="pt-3 border-t border-slate-100 grid grid-cols-2 gap-4">
+                            <div><span class="block text-xs text-slate-400 mb-1">Volatility</span><span class="font-semibold text-slate-700">${data.vol}</span></div>
+                            <div class="text-right"><span class="block text-xs text-slate-400 mb-1">Sharpe</span><span class="font-semibold text-slate-700">${data.sharpe}</span></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            container.innerHTML = 
+                makeCard("Unhedged (QQQ)", kpis.unhedged, false) +
+                makeCard(`Static Hedge (${ratio.toFixed(2)}x)`, kpis.static, true) +
+                makeCard("Dynamic Hedge (Rolling Beta)", kpis.dynamic, false);
+        }
+
+        function renderPerformanceChart(data) {
+            if (charts.perf) charts.perf.destroy();
+            const ctx = document.getElementById('chartPerformance').getContext('2d');
+            const step = Math.ceil(data.length / 500); 
+            const d = data.filter((_, i) => i % step === 0);
+
+            charts.perf = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: d.map(x => x.displayDate),
+                    datasets: [
+                        { label: 'Unhedged', data: d.map(x => x.unhedged), borderColor: '#3b82f6', borderWidth: 2, pointRadius: 0, tension: 0.1 },
+                        { label: `Static (${STATIC_RATIO}x)`, data: d.map(x => x.static), borderColor: '#10b981', borderWidth: 2, pointRadius: 0, tension: 0.1 },
+                        { label: 'Dynamic (Beta)', data: d.map(x => x.dynamic), borderColor: '#8b5cf6', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0.1 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    scales: { 
+                        y: { ticks: { callback: v => '$' + v.toLocaleString() } },
+                        x: { ticks: { maxTicksLimit: 8, maxRotation: 0 } }
+                    },
+                    layout: { padding: { bottom: 20 } }
+                }
+            });
+        }
+
+        function renderDrawdownChart(data) {
+            if (charts.dd) charts.dd.destroy();
+            const ctx = document.getElementById('chartDrawdown').getContext('2d');
+            const step = Math.ceil(data.length / 500);
+            const d = data.filter((_, i) => i % step === 0);
+
+            charts.dd = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: d.map(x => x.displayDate),
+                    datasets: [
+                        {
+                            label: 'Unhedged DD',
+                            data: d.map(x => x.ddUnhedged * 100),
+                            borderColor: '#f43f5e',
+                            backgroundColor: 'rgba(244, 63, 94, 0.2)',
+                            borderWidth: 1,
+                            pointRadius: 0,
+                            fill: true, // Red Area filled
+                            order: 3
+                        },
+                        {
+                            label: 'Static DD',
+                            data: d.map(x => x.ddStatic * 100),
+                            borderColor: '#10b981', // Green Line
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: false,
+                            order: 2
+                        },
+                        {
+                            label: 'Dynamic DD',
+                            data: d.map(x => x.ddDynamic * 100),
+                            borderColor: '#8b5cf6', // Purple Line for Dynamic
+                            borderWidth: 2,
+                            pointRadius: 0,
+                            fill: false,
+                            order: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ${ctx.raw.toFixed(2)}%` } }
+                    },
+                    scales: { 
+                        y: { ticks: { callback: v => v + '%' } },
+                        x: { ticks: { maxTicksLimit: 8, maxRotation: 0 } }
+                    },
+                    layout: { padding: { bottom: 20 } }
+                }
+            });
+        }
+
+        function renderStressTable() {
+            const tbody = document.getElementById('stress-table-body');
+            tbody.innerHTML = '';
+            
+            STRESS_EVENTS.forEach((day, i) => {
+                const saved = day.rStatic - day.rUnhedged;
+                const tr = document.createElement('tr');
+                tr.className = `cursor-pointer transition hover:bg-slate-50 border-b border-slate-50 ${SELECTED_STRESS_INDEX === day.originalIndex ? 'selected-row' : ''}`;
+                tr.onclick = () => renderDrillDown(day.originalIndex);
+                
+                tr.innerHTML = `
+                    <td class="p-4 font-mono text-slate-600">${day.displayDate}</td>
+                    <td class="p-4 text-rose-600 font-bold">${(day.rUnhedged * 100).toFixed(2)}%</td>
+                    <td class="p-4 text-emerald-600">+${(saved * 100).toFixed(2)}%</td>
+                    <td class="p-4 font-bold ${day.rStatic >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
+                        ${(day.rStatic * 100).toFixed(2)}%
+                    </td>
+                    <td class="p-4 ${day.rDynamic >= 0 ? 'text-emerald-600' : 'text-rose-600'}">
+                        ${(day.rDynamic * 100).toFixed(2)}%
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function renderDrillDown(originalIndex) {
+            SELECTED_STRESS_INDEX = originalIndex;
+            renderStressTable(); // Re-render to highlight selected row
+            
+            document.getElementById('drill-empty').classList.add('hidden');
+            document.getElementById('chartDrillDown').classList.remove('hidden');
+            
+            const centerIdx = originalIndex;
+            const start = Math.max(0, centerIdx - 10);
+            const end = Math.min(STRATEGY_DATA.length, centerIdx + 11);
+            const slice = STRATEGY_DATA.slice(start, end);
+            
+            // Rebase to 100
+            const baseUnhedged = slice[0].unhedged;
+            const baseStatic = slice[0].static;
+            const baseDynamic = slice[0].dynamic;
+            
+            const rebased = slice.map(d => ({
+                displayDate: d.displayDate,
+                unhedged: (d.unhedged / baseUnhedged) * 100,
+                static: (d.static / baseStatic) * 100,
+                dynamic: (d.dynamic / baseDynamic) * 100,
+            }));
+
+            if (charts.drill) charts.drill.destroy();
+            const ctx = document.getElementById('chartDrillDown').getContext('2d');
+            
+            charts.drill = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: rebased.map(d => d.displayDate),
+                    datasets: [
+                        { label: 'Unhedged', data: rebased.map(d => d.unhedged), borderColor: '#f43f5e', borderWidth: 2, pointRadius: 1 },
+                        { label: 'Static', data: rebased.map(d => d.static), borderColor: '#10b981', borderWidth: 2, pointRadius: 1 },
+                        { label: 'Dynamic', data: rebased.map(d => d.dynamic), borderColor: '#8b5cf6', borderWidth: 2, pointRadius: 1 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { 
+                        legend: { display: true, labels: { boxWidth: 10, font: {size: 10} } },
+                        annotation: {
+                            annotations: {
+                                line1: {
+                                    type: 'line',
+                                    scaleID: 'x',
+                                    value: STRATEGY_DATA[centerIdx].displayDate,
+                                    borderColor: 'orange',
+                                    borderWidth: 1,
+                                    borderDash: [5, 5],
+                                    label: { content: 'Crash Day', display: true, position: 'start', font: {size: 9} }
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { ticks: { display: false } }, // Hide x-axis labels to save space
+                        y: { ticks: { font: {size: 10} } }
+                    }
+                }
+            });
+        }
+
+    </script>
+</body>
+</html>
