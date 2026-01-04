@@ -1,20 +1,22 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HedgeGuard Analytics</title>
-    
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    
+
     <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- Chart.js Annotation Plugin for the Beta Shading -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
+    <script
+        src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-annotation/3.0.1/chartjs-plugin-annotation.min.js"></script>
     <!-- Html2Canvas for downloading HTML elements -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    
+
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
 
@@ -22,22 +24,44 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .chart-container { position: relative; height: 100%; width: 100%; }
-        
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 100%;
+            width: 100%;
+        }
+
         /* Custom Scrollbar */
-        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
-        .custom-scroll::-webkit-scrollbar-track { background: #f1f5f9; }
-        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-        .custom-scroll::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-        
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
+        }
+
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+
         /* Table Row Selection */
         .selected-row {
-            background-color: #e0e7ff !important; /* Indigo 50 */
+            background-color: #e0e7ff !important;
+            /* Indigo 50 */
             border-left: 4px solid #4f46e5;
         }
     </style>
 </head>
+
 <body class="bg-slate-50 text-slate-800">
 
     <!-- Global State & Logic -->
@@ -45,12 +69,12 @@
         // --- Configuration ---
         let GLOBAL_DATA = null;
         let GLOBAL_RETURNS = null;
-        let STRATEGY_DATA = null; 
-        let STRESS_EVENTS = null; 
+        let STRATEGY_DATA = null;
+        let STRESS_EVENTS = null;
         let INITIAL_INVESTMENT = 100000;
         let STATIC_RATIO = 1.0;
         let SELECTED_STRESS_INDEX = null;
-        
+
         let charts = {};
 
         // --- 1. Math & Data Parsing ---
@@ -78,24 +102,24 @@
         const parseCSV = (text) => {
             const lines = text.trim().split('\n');
             if (lines.length < 2) return null;
-            
+
             const data = [];
             for (let i = 1; i < lines.length; i++) {
                 // Use robust parser instead of simple split
                 const cols = parseCSVLine(lines[i]);
                 if (cols.length < 3) continue;
-                
+
                 const dateParts = cols[0].split('/');
                 if (dateParts.length !== 3) continue;
-                
+
                 const mm = dateParts[0].padStart(2, '0');
                 const dd = dateParts[1].padStart(2, '0');
                 let yy = parseInt(dateParts[2]);
                 const yyyy = yy < 50 ? 2000 + yy : 1900 + yy;
-                
+
                 const isoString = `${yyyy}-${mm}-${dd}`;
                 const dateObj = new Date(isoString);
-                
+
                 // Clean numeric values (remove quotes, dollar signs, and internal commas)
                 const cleanNum = (val) => parseFloat(val.replace(/[",\$]/g, ''));
                 const portfolioClose = cleanNum(cols[1]);
@@ -104,7 +128,7 @@
                 if (!isNaN(portfolioClose) && !isNaN(hedgeClose) && !isNaN(dateObj.getTime())) {
                     data.push({
                         date: dateObj,
-                        dateStr: cols[0], 
+                        dateStr: cols[0],
                         portfolio: portfolioClose,
                         hedge: hedgeClose
                     });
@@ -117,8 +141,8 @@
             const returns = [];
             for (let i = 1; i < data.length; i++) {
                 const today = data[i];
-                const prev = data[i-1];
-                
+                const prev = data[i - 1];
+
                 // Explicitly check for finite, positive prices to avoid NaNs or infinite returns
                 const p_curr = today.portfolio;
                 const h_curr = today.hedge;
@@ -129,10 +153,10 @@
                     !Number.isFinite(p_prev) || p_prev <= 0 || !Number.isFinite(h_prev) || h_prev <= 0) {
                     continue;
                 }
-                
+
                 const rPort = (p_curr - p_prev) / p_prev;
                 const rHedge = (h_curr - h_prev) / h_prev;
-                
+
                 // Only push if results are valid numbers
                 if (Number.isFinite(rPort) && Number.isFinite(rHedge)) {
                     returns.push({
@@ -148,21 +172,21 @@
 
         const calculateRollingBeta = (returns, windowSize = 60) => {
             const betas = new Array(returns.length).fill(null);
-            
+
             // Beta Warmup: Indices < windowSize remain null to avoid lookahead bias.
             for (let i = windowSize; i < returns.length; i++) {
                 const windowData = returns.slice(i - windowSize, i);
-                
+
                 const meanPort = windowData.reduce((sum, d) => sum + d.rPort, 0) / windowSize;
                 const meanHedge = windowData.reduce((sum, d) => sum + d.rHedge, 0) / windowSize;
-                
+
                 let cov = 0;
                 let varHedge = 0;
                 windowData.forEach(d => {
                     cov += (d.rPort - meanPort) * (d.rHedge - meanHedge);
                     varHedge += (d.rHedge - meanHedge) ** 2;
                 });
-                
+
                 betas[i] = varHedge === 0 ? 0 : cov / varHedge;
             }
             return betas;
@@ -172,7 +196,7 @@
             let navUnhedged = initialInvestment;
             let navStatic = initialInvestment;
             let navDynamic = initialInvestment;
-            
+
             let peakUnhedged = initialInvestment;
             let peakStatic = initialInvestment;
             let peakDynamic = initialInvestment;
@@ -180,7 +204,7 @@
             return returns.map((day, idx) => {
                 const rUnhedged = day.rPort;
                 const rStatic = day.rPort - (staticRatio * day.rHedge);
-                
+
                 // Dynamic Alignment: rollingBetas[idx] uses information strictly available as of idx-1.
                 // During warmup period (idx < 60), dynamic hedge acts as unhedged.
                 const dailyBeta = rollingBetas[idx];
@@ -204,7 +228,7 @@
                     ddStatic: (navStatic / peakStatic) - 1,
                     ddDynamic: (navDynamic / peakDynamic) - 1,
                     rUnhedged, rStatic, rDynamic,
-                    originalIndex: idx 
+                    originalIndex: idx
                 };
             });
         };
@@ -213,14 +237,14 @@
             const computeFor = (key, rKey) => {
                 const n = strategyData.length;
                 if (n <= 1) return { ret: '0%', vol: '0%', sharpe: '0.00', dd: '0%' };
-                
-                const totalReturn = (strategyData[n-1][key] / initialInvestment) - 1;
-                const annReturn = Math.pow(1 + totalReturn, 252/n) - 1;
-                
+
+                const totalReturn = (strategyData[n - 1][key] / initialInvestment) - 1;
+                const annReturn = Math.pow(1 + totalReturn, 252 / n) - 1;
+
                 const meanR = strategyData.reduce((s, d) => s + d[rKey], 0) / n;
-                const variance = strategyData.reduce((s, d) => s + (d[rKey] - meanR)**2, 0) / (n - 1);
+                const variance = strategyData.reduce((s, d) => s + (d[rKey] - meanR) ** 2, 0) / (n - 1);
                 const annVol = Math.sqrt(variance) * Math.sqrt(252);
-                
+
                 const maxDD = Math.min(...strategyData.map(d => d[`dd${key.charAt(0).toUpperCase() + key.slice(1)}`]));
 
                 return {
@@ -248,9 +272,9 @@
         };
 
         const getMonthlyReturns = (returns) => {
-            const monthsMap = {}; 
+            const monthsMap = {};
             returns.forEach(r => {
-                const k = `${r.date.getFullYear()}-${String(r.date.getMonth()+1).padStart(2, '0')}`;
+                const k = `${r.date.getFullYear()}-${String(r.date.getMonth() + 1).padStart(2, '0')}`;
                 if (!monthsMap[k]) monthsMap[k] = 1.0;
                 monthsMap[k] *= (1 + r.rPort);
             });
@@ -258,20 +282,20 @@
             Object.entries(monthsMap).forEach(([k, v]) => {
                 const [y, m] = k.split('-');
                 if (!pivot[y]) pivot[y] = Array(12).fill(null);
-                pivot[y][parseInt(m)-1] = (v - 1) * 100;
+                pivot[y][parseInt(m) - 1] = (v - 1) * 100;
             });
             return pivot;
         };
 
         const getMonthlyBoxPlotData = (returns) => {
             const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-            const calendarMonthly = {}; 
+            const calendarMonthly = {};
             returns.forEach(r => {
                 const key = `${r.date.getFullYear()}-${r.date.getMonth()}`;
                 if (calendarMonthly[key] === undefined) calendarMonthly[key] = 1.0;
                 calendarMonthly[key] *= (1 + r.rPort);
             });
-            const groupedByMonthIndex = {}; 
+            const groupedByMonthIndex = {};
             Object.entries(calendarMonthly).forEach(([key, val]) => {
                 const mIndex = key.split('-')[1];
                 if (!groupedByMonthIndex[mIndex]) groupedByMonthIndex[mIndex] = [];
@@ -342,6 +366,191 @@
             });
         }
 
+        // --- Yahoo Finance Ticker Data Generator ---
+
+        // Try multiple CORS proxies for reliability
+        const CORS_PROXIES = [
+            (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+            (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+            (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`
+        ];
+
+        async function fetchWithCorsProxy(url) {
+            let lastError = null;
+            for (const proxyFn of CORS_PROXIES) {
+                try {
+                    const proxyUrl = proxyFn(url);
+                    const response = await fetch(proxyUrl);
+                    if (response.ok) {
+                        return await response.text();
+                    }
+                    lastError = new Error(`Proxy returned ${response.status}`);
+                } catch (e) {
+                    lastError = e;
+                }
+            }
+            throw lastError || new Error('All proxies failed');
+        }
+
+        async function fetchYahooFinanceData(ticker, startDate, endDate) {
+            const period1 = Math.floor(new Date(startDate).getTime() / 1000);
+            const period2 = Math.floor(new Date(endDate).getTime() / 1000) + 86400; // Add 1 day to include end date
+
+            // Use the chart API which is publicly accessible (unlike the download endpoint which requires auth)
+            const yahooUrl = `https://query1.finance.yahoo.com/v8/finance/chart/${ticker.toUpperCase()}?period1=${period1}&period2=${period2}&interval=1d&events=history`;
+
+            const responseText = await fetchWithCorsProxy(yahooUrl);
+
+            // Check if response is JSON error
+            let jsonData;
+            try {
+                jsonData = JSON.parse(responseText);
+            } catch (e) {
+                throw new Error(`Invalid response for ${ticker}`);
+            }
+
+            // Check for API errors
+            if (jsonData.chart?.error) {
+                throw new Error(`Yahoo Finance error for ${ticker}: ${jsonData.chart.error.description || 'Unknown error'}`);
+            }
+
+            const result = jsonData.chart?.result?.[0];
+            if (!result) {
+                throw new Error(`No data found for ${ticker}. Check the ticker symbol.`);
+            }
+
+            const timestamps = result.timestamp || [];
+            const closes = result.indicators?.quote?.[0]?.close || [];
+
+            if (timestamps.length === 0) {
+                throw new Error(`No historical data available for ${ticker} in the specified date range.`);
+            }
+
+            // Convert timestamps to dates and pair with close prices
+            const data = [];
+            for (let i = 0; i < timestamps.length; i++) {
+                const date = new Date(timestamps[i] * 1000);
+                const closePrice = closes[i];
+
+                if (closePrice !== null && closePrice !== undefined && !isNaN(closePrice)) {
+                    // Format as YYYY-MM-DD
+                    const dateStr = date.toISOString().split('T')[0];
+                    data.push({ date: dateStr, close: closePrice });
+                }
+            }
+
+            return data;
+        }
+
+        function formatDateToMMDDYY(isoDate) {
+            const [year, month, day] = isoDate.split('-');
+            const yy = year.slice(-2);
+            return `${parseInt(month)}/${parseInt(day)}/${yy}`;
+        }
+
+        function showTickerError(message) {
+            const errorDiv = document.getElementById('tickerError');
+            errorDiv.textContent = message;
+            errorDiv.classList.remove('hidden');
+        }
+
+        function hideTickerError() {
+            document.getElementById('tickerError').classList.add('hidden');
+        }
+
+        function setGenerateButtonLoading(loading) {
+            const btn = document.getElementById('generateBtn');
+            if (loading) {
+                btn.disabled = true;
+                btn.innerHTML = `<svg class="animate-spin h-5 w-5 mr-2" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg> Fetching Data...`;
+                btn.classList.add('opacity-75', 'cursor-not-allowed');
+            } else {
+                btn.disabled = false;
+                btn.innerHTML = `<i data-lucide="download" class="w-5 h-5"></i> Generate & Download CSV`;
+                btn.classList.remove('opacity-75', 'cursor-not-allowed');
+                if (typeof lucide !== 'undefined') lucide.createIcons();
+            }
+        }
+
+        async function generateAndDownloadCSV() {
+            hideTickerError();
+
+            const portfolioTicker = document.getElementById('portfolioTicker').value.trim().toUpperCase();
+            const hedgeTicker = document.getElementById('hedgeTicker').value.trim().toUpperCase();
+            const fromDate = document.getElementById('fromDate').value;
+            const toDate = document.getElementById('toDate').value;
+
+            // Validation
+            if (!portfolioTicker) {
+                showTickerError('Please enter a portfolio ticker symbol.');
+                return;
+            }
+            if (!hedgeTicker) {
+                showTickerError('Please enter a hedge ticker symbol.');
+                return;
+            }
+            if (!fromDate || !toDate) {
+                showTickerError('Please select both from and to dates.');
+                return;
+            }
+            if (new Date(fromDate) >= new Date(toDate)) {
+                showTickerError('From date must be before to date.');
+                return;
+            }
+
+            setGenerateButtonLoading(true);
+
+            try {
+                // Fetch data for both tickers
+                const [portfolioData, hedgeData] = await Promise.all([
+                    fetchYahooFinanceData(portfolioTicker, fromDate, toDate),
+                    fetchYahooFinanceData(hedgeTicker, fromDate, toDate)
+                ]);
+
+                if (portfolioData.length === 0) {
+                    throw new Error(`No data returned for ${portfolioTicker}. Check the ticker symbol.`);
+                }
+                if (hedgeData.length === 0) {
+                    throw new Error(`No data returned for ${hedgeTicker}. Check the ticker symbol.`);
+                }
+
+                // Create lookup map for hedge data
+                const hedgeMap = {};
+                hedgeData.forEach(d => { hedgeMap[d.date] = d.close; });
+
+                // Create lookup map for portfolio data
+                const portfolioMap = {};
+                portfolioData.forEach(d => { portfolioMap[d.date] = d.close; });
+
+                // Get all unique dates and sort them
+                const allDates = [...new Set([...Object.keys(portfolioMap), ...Object.keys(hedgeMap)])].sort();
+
+                // Build CSV content
+                const headers = `Date,PortfolioClose (${portfolioTicker}),HedgeClose (${hedgeTicker})`;
+                const rows = allDates.map(date => {
+                    const portfolioClose = portfolioMap[date] !== undefined ? portfolioMap[date] : '';
+                    const hedgeClose = hedgeMap[date] !== undefined ? hedgeMap[date] : '';
+                    return `${formatDateToMMDDYY(date)},${portfolioClose},${hedgeClose}`;
+                });
+
+                const csvContent = [headers, ...rows].join('\n');
+
+                // Download the CSV
+                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                link.download = `${portfolioTicker}_${hedgeTicker}_${fromDate}_to_${toDate}.csv`;
+                link.click();
+                URL.revokeObjectURL(link.href);
+
+            } catch (error) {
+                console.error('Error fetching ticker data:', error);
+                showTickerError(error.message || 'Failed to fetch data. Please check your ticker symbols and try again.');
+            } finally {
+                setGenerateButtonLoading(false);
+            }
+        }
+
         function resetApp() {
             GLOBAL_DATA = null;
             GLOBAL_RETURNS = null;
@@ -370,14 +579,73 @@
     <div id="view-upload" class="flex flex-col items-center justify-center min-h-screen">
         <div class="p-10 bg-white shadow-xl rounded-2xl text-center max-w-lg w-full border border-slate-200">
             <h1 class="text-2xl font-bold text-slate-800 mb-2">Upload Data File</h1>
-            <p class="text-slate-500 mb-8">Upload your CSV containing <strong>Date</strong>, <strong>Portfolio Close</strong>, and <strong>Hedge Close</strong>.</p>
+            <p class="text-slate-500 mb-8">Upload your CSV containing <strong>Date</strong>, <strong>Portfolio
+                    Close</strong>, and <strong>Hedge Close</strong>.</p>
             <label class="block w-full cursor-pointer group">
                 <input type="file" id="csvFile" class="hidden" accept=".csv" />
-                <div class="flex items-center justify-center w-full py-4 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-md shadow-indigo-200">
+                <div
+                    class="flex items-center justify-center w-full py-4 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-md shadow-indigo-200">
                     <i data-lucide="file-text" class="w-5 h-5 mr-2"></i> Select CSV File
                 </div>
             </label>
             <p class="mt-4 text-xs text-slate-400">Supported formats: CSV. Auto-detection enabled.</p>
+        </div>
+
+        <!-- Divider -->
+        <div class="flex items-center gap-4 max-w-lg w-full my-6">
+            <div class="flex-1 h-px bg-slate-200"></div>
+            <span class="text-sm text-slate-400 font-medium">OR</span>
+            <div class="flex-1 h-px bg-slate-200"></div>
+        </div>
+
+        <!-- Ticker Data Generator Card -->
+        <div class="p-10 bg-white shadow-xl rounded-2xl text-center max-w-lg w-full border border-slate-200">
+            <h1 class="text-2xl font-bold text-slate-800 mb-2">Generate Ticker Data</h1>
+            <p class="text-slate-500 mb-6">Fetch historical closing prices from Yahoo Finance and download as CSV.</p>
+
+            <div class="space-y-4 text-left">
+                <!-- Portfolio Ticker -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Portfolio Ticker</label>
+                    <input type="text" id="portfolioTicker" placeholder="e.g., QQQ"
+                        class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition uppercase font-mono" />
+                </div>
+
+                <!-- Hedge Ticker -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Hedge Ticker</label>
+                    <input type="text" id="hedgeTicker" placeholder="e.g., SPY"
+                        class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition uppercase font-mono" />
+                </div>
+
+                <!-- Date Range -->
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">From Date</label>
+                        <input type="date" id="fromDate"
+                            class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">To Date</label>
+                        <input type="date" id="toDate"
+                            class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Message -->
+            <div id="tickerError"
+                class="hidden mt-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm"></div>
+
+            <!-- Generate Button -->
+            <button onclick="generateAndDownloadCSV()" id="generateBtn"
+                class="w-full mt-6 py-4 px-6 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium shadow-md shadow-emerald-200 flex items-center justify-center gap-2">
+                <i data-lucide="download" class="w-5 h-5"></i>
+                Generate & Download CSV
+            </button>
+
+            <p class="mt-4 text-xs text-slate-400">Data sourced from Yahoo Finance. Use tickers like QQQ, SPY, AAPL,
+                etc.</p>
         </div>
     </div>
 
@@ -388,9 +656,11 @@
             <p class="text-slate-500 mb-8">How much capital would you like to simulate?</p>
             <div class="mb-6 relative">
                 <span class="absolute left-4 top-3 text-slate-400">$</span>
-                <input type="number" id="investInput" value="100000" class="w-full pl-8 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition font-mono text-lg" />
+                <input type="number" id="investInput" value="100000"
+                    class="w-full pl-8 pr-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition font-mono text-lg" />
             </div>
-            <button onclick="startDashboard()" class="w-full py-4 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-md shadow-indigo-200 flex items-center justify-center gap-2">
+            <button onclick="startDashboard()"
+                class="w-full py-4 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-md shadow-indigo-200 flex items-center justify-center gap-2">
                 Start Analysis <i data-lucide="arrow-right" class="w-5 h-5"></i>
             </button>
         </div>
@@ -402,7 +672,8 @@
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
                 <div class="flex items-center gap-2">
                     <i data-lucide="shield" class="w-6 h-6 text-indigo-600"></i>
-                    <h1 class="text-xl font-bold text-slate-800">HedgeGuard <span class="font-light text-slate-400">Analytics</span></h1>
+                    <h1 class="text-xl font-bold text-slate-800">HedgeGuard <span
+                            class="font-light text-slate-400">Analytics</span></h1>
                 </div>
                 <div class="flex items-center gap-6">
                     <div class="text-sm text-slate-500 hidden md:flex items-center gap-4">
@@ -410,7 +681,8 @@
                         <span class="h-4 w-px bg-slate-300"></span>
                         <span id="display-days"></span>
                     </div>
-                    <button onclick="resetApp()" class="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition border border-slate-200">
+                    <button onclick="resetApp()"
+                        class="flex items-center gap-2 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition border border-slate-200">
                         <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
                         New Upload
                     </button>
@@ -419,7 +691,7 @@
         </header>
 
         <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-            
+
             <!-- Section 1: Portfolio DNA -->
             <section class="space-y-6">
                 <div class="flex items-center gap-2 mb-4">
@@ -428,12 +700,13 @@
                 </div>
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    
+
                     <!-- Monthly Heatmap -->
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
                         <div class="flex justify-between items-center mb-4">
                             <h3 class="text-sm font-semibold text-slate-500">Monthly Return Matrix</h3>
-                            <button onclick="downloadElement('heatmap-container', 'Monthly_Heatmap')" class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Image">
+                            <button onclick="downloadElement('heatmap-container', 'Monthly_Heatmap')"
+                                class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Image">
                                 <i data-lucide="download" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -443,8 +716,10 @@
                     <!-- Monthly Box Plot -->
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                         <div class="flex justify-between items-center mb-6">
-                            <h3 class="text-sm font-semibold text-slate-500">Seasonality: Compounded Monthly Returns</h3>
-                            <button onclick="downloadChart('chartDispersion', 'Monthly_Dispersion')" class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Chart">
+                            <h3 class="text-sm font-semibold text-slate-500">Seasonality: Compounded Monthly Returns
+                            </h3>
+                            <button onclick="downloadChart('chartDispersion', 'Monthly_Dispersion')"
+                                class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Chart">
                                 <i data-lucide="download" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -457,7 +732,8 @@
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
                         <div class="flex justify-between items-center mb-6">
                             <h3 class="text-sm font-semibold text-slate-500">Daily Return Histogram (Fat Tails)</h3>
-                            <button onclick="downloadChart('chartHistogram', 'Daily_Histogram')" class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Chart">
+                            <button onclick="downloadChart('chartHistogram', 'Daily_Histogram')"
+                                class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Chart">
                                 <i data-lucide="download" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -470,7 +746,8 @@
                     <div class="bg-white p-6 rounded-xl border border-slate-200 shadow-sm lg:col-span-2">
                         <div class="flex justify-between items-center mb-6">
                             <h3 class="text-sm font-semibold text-slate-500">90-Day Rolling Beta</h3>
-                            <button onclick="downloadChart('chartBeta', 'Rolling_Beta')" class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Chart">
+                            <button onclick="downloadChart('chartBeta', 'Rolling_Beta')"
+                                class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Chart">
                                 <i data-lucide="download" class="w-4 h-4"></i>
                             </button>
                         </div>
@@ -489,12 +766,14 @@
                         <i data-lucide="settings" class="w-5 h-5 text-indigo-500"></i>
                         <h2 class="text-lg font-bold text-slate-800">Strategy Lab</h2>
                     </div>
-                    
-                    <div class="bg-white px-4 py-2 flex items-center gap-4 shadow-sm border border-indigo-100 rounded-lg">
+
+                    <div
+                        class="bg-white px-4 py-2 flex items-center gap-4 shadow-sm border border-indigo-100 rounded-lg">
                         <span class="text-sm font-medium text-slate-600 flex items-center gap-2">
                             <i data-lucide="mouse-pointer-2" class="w-4 h-4"></i> Static Hedge Ratio:
                         </span>
-                        <input type="range" id="ratioSlider" min="0.0" max="2.0" step="0.05" value="1.0" class="w-32 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
+                        <input type="range" id="ratioSlider" min="0.0" max="2.0" step="0.05" value="1.0"
+                            class="w-32 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600">
                         <span id="ratioDisplay" class="text-sm font-bold text-indigo-600 w-12 text-right">1.00x</span>
                     </div>
                 </div>
@@ -515,7 +794,8 @@
                 <div class="bg-white p-6 h-[400px] rounded-xl border border-slate-200 shadow-sm">
                     <div class="flex justify-between items-center mb-6">
                         <h3 class="text-sm font-semibold text-slate-500">Cumulative Growth</h3>
-                        <button onclick="downloadChart('chartPerformance', 'Cumulative_Growth')" class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Chart">
+                        <button onclick="downloadChart('chartPerformance', 'Cumulative_Growth')"
+                            class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Chart">
                             <i data-lucide="download" class="w-4 h-4"></i>
                         </button>
                     </div>
@@ -529,35 +809,51 @@
                         <div class="flex items-center gap-4">
                             <h3 class="text-sm font-semibold text-slate-500">Drawdown Analysis (Faceted)</h3>
                             <div class="flex gap-3 text-xs flex-wrap">
-                                <span class="flex items-center gap-1"><div class="w-3 h-3 bg-slate-200 rounded-sm"></div> Risk Shadow</span>
-                                <span class="flex items-center gap-1"><div class="w-3 h-3 bg-green-500 rounded-sm"></div> Static</span>
-                                <span class="flex items-center gap-1"><div class="w-3 h-3 bg-purple-500 rounded-sm"></div> Dynamic</span>
+                                <span class="flex items-center gap-1">
+                                    <div class="w-3 h-3 bg-slate-200 rounded-sm"></div> Risk Shadow
+                                </span>
+                                <span class="flex items-center gap-1">
+                                    <div class="w-3 h-3 bg-green-500 rounded-sm"></div> Static
+                                </span>
+                                <span class="flex items-center gap-1">
+                                    <div class="w-3 h-3 bg-purple-500 rounded-sm"></div> Dynamic
+                                </span>
                             </div>
                         </div>
-                        <button onclick="downloadElement('drawdown-container', 'Drawdown_Analysis')" class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download All Panels">
+                        <button onclick="downloadElement('drawdown-container', 'Drawdown_Analysis')"
+                            class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download All Panels">
                             <i data-lucide="download" class="w-4 h-4"></i>
                         </button>
                     </div>
-                    
+
                     <div id="drawdown-container" class="flex flex-col gap-4 h-[500px] bg-white p-1">
                         <div class="relative flex-1 bg-slate-50/50 rounded border border-slate-100 group">
-                            <div class="absolute top-2 left-2 text-[10px] font-bold text-slate-400 bg-white px-1 rounded shadow-sm z-10 flex items-center gap-2">
+                            <div
+                                class="absolute top-2 left-2 text-[10px] font-bold text-slate-400 bg-white px-1 rounded shadow-sm z-10 flex items-center gap-2">
                                 BASELINE RISK
-                                <button onclick="downloadChart('ddChart1', 'DD_Baseline')" class="hover:text-indigo-600 transition"><i data-lucide="download" class="w-3 h-3"></i></button>
+                                <button onclick="downloadChart('ddChart1', 'DD_Baseline')"
+                                    class="hover:text-indigo-600 transition"><i data-lucide="download"
+                                        class="w-3 h-3"></i></button>
                             </div>
                             <canvas id="ddChart1"></canvas>
                         </div>
                         <div class="relative flex-1 bg-slate-50/50 rounded border border-slate-100 group">
-                            <div class="absolute top-2 left-2 text-[10px] font-bold text-green-600 bg-white px-1 rounded shadow-sm z-10 flex items-center gap-2">
+                            <div
+                                class="absolute top-2 left-2 text-[10px] font-bold text-green-600 bg-white px-1 rounded shadow-sm z-10 flex items-center gap-2">
                                 STATIC HEDGE
-                                <button onclick="downloadChart('ddChart2', 'DD_Static')" class="hover:text-green-700 transition"><i data-lucide="download" class="w-3 h-3"></i></button>
+                                <button onclick="downloadChart('ddChart2', 'DD_Static')"
+                                    class="hover:text-green-700 transition"><i data-lucide="download"
+                                        class="w-3 h-3"></i></button>
                             </div>
                             <canvas id="ddChart2"></canvas>
                         </div>
                         <div class="relative flex-1 bg-slate-50/50 rounded border border-slate-100 group">
-                            <div class="absolute top-2 left-2 text-[10px] font-bold text-purple-600 bg-white px-1 rounded shadow-sm z-10 flex items-center gap-2">
+                            <div
+                                class="absolute top-2 left-2 text-[10px] font-bold text-purple-600 bg-white px-1 rounded shadow-sm z-10 flex items-center gap-2">
                                 DYNAMIC HEDGE
-                                <button onclick="downloadChart('ddChart3', 'DD_Dynamic')" class="hover:text-purple-700 transition"><i data-lucide="download" class="w-3 h-3"></i></button>
+                                <button onclick="downloadChart('ddChart3', 'DD_Dynamic')"
+                                    class="hover:text-purple-700 transition"><i data-lucide="download"
+                                        class="w-3 h-3"></i></button>
                             </div>
                             <canvas id="ddChart3"></canvas>
                         </div>
@@ -571,11 +867,12 @@
                     <i data-lucide="alert-triangle" class="w-5 h-5 text-amber-500"></i>
                     <h2 class="text-lg font-bold text-slate-800">Stress Test: Worst 5 Days</h2>
                 </div>
-                
+
                 <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     <div class="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
                         <div class="p-4 bg-slate-50 border-b border-slate-100">
-                            <span class="text-xs font-semibold text-slate-500 uppercase">Click a row to analyze event</span>
+                            <span class="text-xs font-semibold text-slate-500 uppercase">Click a row to analyze
+                                event</span>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm text-left">
@@ -596,13 +893,16 @@
                     <div class="lg:col-span-1 bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col">
                         <div class="flex justify-between items-center mb-4">
                             <h3 class="text-sm font-semibold text-slate-500">Event Replay (+/- 10 Days)</h3>
-                            <button onclick="downloadChart('chartDrillDown', 'Event_Replay')" class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Chart">
+                            <button onclick="downloadChart('chartDrillDown', 'Event_Replay')"
+                                class="p-1 text-slate-400 hover:text-indigo-600 transition" title="Download Chart">
                                 <i data-lucide="download" class="w-4 h-4"></i>
                             </button>
                         </div>
                         <div id="drill-chart-container" class="flex-1 h-48 relative">
-                            <div id="drill-empty" class="absolute inset-0 flex items-center justify-center text-slate-400 text-xs text-center p-8 border-2 border-dashed border-slate-100 rounded-lg">
-                                Select a crash event from the table to see how the hedge performed before and after the shock.
+                            <div id="drill-empty"
+                                class="absolute inset-0 flex items-center justify-center text-slate-400 text-xs text-center p-8 border-2 border-dashed border-slate-100 rounded-lg">
+                                Select a crash event from the table to see how the hedge performed before and after the
+                                shock.
                             </div>
                             <canvas id="chartDrillDown" class="hidden"></canvas>
                         </div>
@@ -615,7 +915,7 @@
 
     <!-- MAIN APP LOGIC -->
     <script>
-        document.getElementById('csvFile').addEventListener('change', function(e) {
+        document.getElementById('csvFile').addEventListener('change', function (e) {
             const file = e.target.files[0];
             if (!file) return;
             const reader = new FileReader();
@@ -637,13 +937,13 @@
             INITIAL_INVESTMENT = parseFloat(document.getElementById('investInput').value) || 100000;
             document.getElementById('view-investment').classList.add('hidden');
             document.getElementById('view-dashboard').classList.remove('hidden');
-            
+
             document.getElementById('display-invest').textContent = `$${INITIAL_INVESTMENT.toLocaleString()}`;
             document.getElementById('display-days').textContent = `${GLOBAL_DATA.length} days`;
-            
+
             renderStaticVisuals();
             updateStrategy(1.0);
-            
+
             if (typeof lucide !== 'undefined') lucide.createIcons();
         }
 
@@ -664,7 +964,7 @@
             const monthly = getMonthlyReturns(GLOBAL_RETURNS);
             const years = Object.keys(monthly).sort();
             const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-            
+
             let html = `<table class="w-full text-xs text-center border-collapse"><thead><tr><th class="p-2 text-left text-slate-400 font-medium">Year</th>`;
             months.forEach(m => html += `<th class="p-2 text-slate-400 font-medium">${m}</th>`);
             html += `</tr></thead><tbody>`;
@@ -694,7 +994,7 @@
         function renderDispersionChart() {
             const data = getMonthlyBoxPlotData(GLOBAL_RETURNS);
             const ctx = document.getElementById('chartDispersion').getContext('2d');
-            if(charts.dispersion) charts.dispersion.destroy();
+            if (charts.dispersion) charts.dispersion.destroy();
             charts.dispersion = new Chart(ctx, {
                 data: {
                     labels: data.map(d => d.month),
@@ -740,20 +1040,20 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { 
-                        legend: { display: false }, 
-                        tooltip: { 
-                            callbacks: { 
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
                                 label: (ctx) => {
-                                    if(ctx.dataset.type === 'bar') return `IQR: ${ctx.raw[0].toFixed(1)}% to ${ctx.raw[1].toFixed(1)}%`;
+                                    if (ctx.dataset.type === 'bar') return `IQR: ${ctx.raw[0].toFixed(1)}% to ${ctx.raw[1].toFixed(1)}%`;
                                     return `${ctx.dataset.label}: ${ctx.raw.toFixed(2)}%`;
-                                } 
-                            } 
-                        } 
+                                }
+                            }
+                        }
                     },
-                    scales: { 
-                        y: { title: { display: true, text: 'Monthly Return (%)', font: {size: 10} }, ticks: { callback: v => v + '%' } }, 
-                        x: { grid: { display: false } } 
+                    scales: {
+                        y: { title: { display: true, text: 'Monthly Return (%)', font: { size: 10 } }, ticks: { callback: v => v + '%' } },
+                        x: { grid: { display: false } }
                     },
                     layout: { padding: { bottom: 20 } }
                 }
@@ -763,7 +1063,7 @@
         function renderHistogramChart() {
             const data = getHistogramData(GLOBAL_RETURNS);
             const ctx = document.getElementById('chartHistogram').getContext('2d');
-            if(charts.histogram) charts.histogram.destroy();
+            if (charts.histogram) charts.histogram.destroy();
             charts.histogram = new Chart(ctx, {
                 type: 'bar',
                 data: {
@@ -778,8 +1078,8 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    scales: { 
-                        x: { ticks: { maxRotation: 0, minRotation: 0, autoSkip: true, font: {size: 10} }, grid: { display: false } } 
+                    scales: {
+                        x: { ticks: { maxRotation: 0, minRotation: 0, autoSkip: true, font: { size: 10 } }, grid: { display: false } }
                     },
                     plugins: { legend: { display: false } },
                     layout: { padding: { bottom: 20 } }
@@ -792,12 +1092,12 @@
             const slicedBetas = betas.slice(90);
             const labels = GLOBAL_RETURNS.map(r => r.dateStr).slice(90);
             const ctx = document.getElementById('chartBeta').getContext('2d');
-            
+
             // Edge-case safety for maxBeta calculation
             const validBetas = slicedBetas.filter(b => b !== null);
             const maxBeta = validBetas.length > 0 ? Math.max(...validBetas) : 2.0;
 
-            if(charts.beta) charts.beta.destroy();
+            if (charts.beta) charts.beta.destroy();
             charts.beta = new Chart(ctx, {
                 type: 'line',
                 data: {
@@ -809,7 +1109,7 @@
                         borderWidth: 2,
                         pointRadius: 0,
                         tension: 0.1,
-                        spanGaps: false 
+                        spanGaps: false
                     }]
                 },
                 options: {
@@ -836,7 +1136,7 @@
                         }
                     },
                     scales: {
-                        x: { ticks: { maxTicksLimit: 10, maxRotation: 0 } }, 
+                        x: { ticks: { maxTicksLimit: 10, maxRotation: 0 } },
                         y: { title: { display: true, text: 'Beta to Hedge' } }
                     },
                     layout: { padding: { bottom: 20 } }
@@ -850,14 +1150,14 @@
             STRATEGY_DATA = calculateStrategyPerformance(GLOBAL_RETURNS, rollingBetas, ratio, INITIAL_INVESTMENT);
             STRESS_EVENTS = getStressEvents(STRATEGY_DATA);
             const kpis = calculateKPIs(STRATEGY_DATA, INITIAL_INVESTMENT);
-            
+
             updateKPICards(kpis, ratio);
             renderPerformanceChart(STRATEGY_DATA);
             renderDrawdownChart(STRATEGY_DATA);
             renderStressTable();
-            
+
             if (SELECTED_STRESS_INDEX !== null) renderDrillDown(SELECTED_STRESS_INDEX);
-            
+
             const volReduction = (1 - (kpis.static.volVal / kpis.unhedged.volVal)) * 100;
             const returnCost = (kpis.unhedged.retVal - kpis.static.retVal);
             document.getElementById('dynamicInsight').innerHTML = `
@@ -894,7 +1194,7 @@
                     </div>
                 </div>
             `;
-            container.innerHTML = 
+            container.innerHTML =
                 makeCard("Unhedged (QQQ)", kpis.unhedged, false) +
                 makeCard(`Static Hedge (${ratio.toFixed(2)}x)`, kpis.static, true) +
                 makeCard("Dynamic Hedge (Beta)", kpis.dynamic, false);
@@ -903,7 +1203,7 @@
         function renderPerformanceChart(data) {
             if (charts.perf) charts.perf.destroy();
             const ctx = document.getElementById('chartPerformance').getContext('2d');
-            const step = Math.ceil(data.length / 500); 
+            const step = Math.ceil(data.length / 500);
             const d = data.filter((_, i) => i % step === 0);
             charts.perf = new Chart(ctx, {
                 type: 'line',
@@ -912,7 +1212,7 @@
                     datasets: [
                         { label: 'Unhedged', data: d.map(x => x.unhedged), borderColor: '#3b82f6', borderWidth: 2, pointRadius: 0, tension: 0.1 },
                         { label: `Static (${STATIC_RATIO}x)`, data: d.map(x => x.static), borderColor: '#10b981', borderWidth: 2, pointRadius: 0, tension: 0.1 },
-                        { label: 'Dynamic (Beta)', data: d.map(x => x.dynamic), borderColor: '#8b5cf6', borderWidth: 2, borderDash: [5,5], pointRadius: 0, tension: 0.1 }
+                        { label: 'Dynamic (Beta)', data: d.map(x => x.dynamic), borderColor: '#8b5cf6', borderWidth: 2, borderDash: [5, 5], pointRadius: 0, tension: 0.1 }
                     ]
                 },
                 options: {
@@ -935,7 +1235,7 @@
             };
             const allValues = [...d.map(x => x.ddUnhedged * 100), ...d.map(x => x.ddStatic * 100), ...d.map(x => x.ddDynamic * 100)];
             const minVal = Math.min(...allValues);
-            const yAxisConfig = { min: minVal, max: 0, ticks: { callback: v => v + '%', font: {size: 9}, maxTicksLimit: 4 }, grid: { drawBorder: false } };
+            const yAxisConfig = { min: minVal, max: 0, ticks: { callback: v => v + '%', font: { size: 9 }, maxTicksLimit: 4 }, grid: { drawBorder: false } };
 
             charts.dd1 = new Chart(document.getElementById('ddChart1').getContext('2d'), {
                 type: 'line',
@@ -952,7 +1252,7 @@
             charts.dd3 = new Chart(document.getElementById('ddChart3').getContext('2d'), {
                 type: 'line',
                 data: { labels: d.map(x => x.displayDate), datasets: [{ data: d.map(x => x.ddUnhedged * 100), borderColor: 'transparent', backgroundColor: '#e2e8f0', fill: true, borderWidth: 0, pointRadius: 0 }, { data: d.map(x => x.ddDynamic * 100), borderColor: '#8b5cf6', borderWidth: 2, fill: false }] },
-                options: { ...commonOptions, scales: { x: { ticks: { maxTicksLimit: 6, maxRotation: 0, autoSkip: true, font: {size: 10} }, grid: { display: false } }, y: yAxisConfig }, layout: { padding: { bottom: 10, right: 10 } } }
+                options: { ...commonOptions, scales: { x: { ticks: { maxTicksLimit: 6, maxRotation: 0, autoSkip: true, font: { size: 10 } }, grid: { display: false } }, y: yAxisConfig }, layout: { padding: { bottom: 10, right: 10 } } }
             });
         }
 
@@ -992,9 +1292,10 @@
             charts.drill = new Chart(document.getElementById('chartDrillDown').getContext('2d'), {
                 type: 'line',
                 data: { labels: rebased.map(d => d.displayDate), datasets: [{ label: 'Unhedged', data: rebased.map(d => d.unhedged), borderColor: '#f43f5e', borderWidth: 2, pointRadius: 1 }, { label: 'Static', data: rebased.map(d => d.static), borderColor: '#10b981', borderWidth: 2, pointRadius: 1 }, { label: 'Dynamic', data: rebased.map(d => d.dynamic), borderColor: '#8b5cf6', borderWidth: 2, pointRadius: 1 }] },
-                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, labels: { boxWidth: 10, font: {size: 10} } }, annotation: { annotations: { line1: { type: 'line', scaleID: 'x', value: STRATEGY_DATA[centerIdx].displayDate, borderColor: 'orange', borderWidth: 1, borderDash: [5, 5], label: { content: 'Crash Day', display: true, position: 'start', font: {size: 9} } } } } }, scales: { x: { ticks: { display: false } }, y: { ticks: { font: {size: 10} } } } }
+                options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, labels: { boxWidth: 10, font: { size: 10 } } }, annotation: { annotations: { line1: { type: 'line', scaleID: 'x', value: STRATEGY_DATA[centerIdx].displayDate, borderColor: 'orange', borderWidth: 1, borderDash: [5, 5], label: { content: 'Crash Day', display: true, position: 'start', font: { size: 9 } } } } } }, scales: { x: { ticks: { display: false } }, y: { ticks: { font: { size: 10 } } } } }
             });
         }
     </script>
 </body>
+
 </html>
