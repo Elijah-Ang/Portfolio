@@ -576,11 +576,89 @@
     <!-- VIEWS -->
 
     <!-- 1. Upload View -->
-    <div id="view-upload" class="flex flex-col items-center justify-center min-h-screen">
+    <div id="view-upload" class="flex flex-col items-center py-16 px-4 min-h-screen">
+
+        <!-- Hero Title & Instructions -->
+        <div class="text-center max-w-2xl mb-12">
+            <div class="flex items-center justify-center gap-3 mb-4">
+                <i data-lucide="shield" class="w-10 h-10 text-indigo-600"></i>
+                <h1 class="text-4xl font-bold text-slate-800">HedgeGuard Analytics</h1>
+            </div>
+            <p class="text-lg text-slate-600 mb-6">Analyze and compare hedging strategies for your investment portfolio.
+            </p>
+
+            <div class="bg-gradient-to-r from-indigo-50 to-purple-50 border border-indigo-100 rounded-xl p-6 text-left">
+                <h2 class="text-sm font-bold text-indigo-700 uppercase tracking-wider mb-3 flex items-center gap-2">
+                    <i data-lucide="sparkles" class="w-4 h-4"></i> How to Use
+                </h2>
+                <ol class="space-y-2 text-sm text-slate-700">
+                    <li class="flex items-start gap-2">
+                        <span
+                            class="flex-shrink-0 w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                        <span><strong>Choose your tickers:</strong> Decide on a portfolio (e.g., QQQ for tech exposure)
+                            and a hedge instrument (e.g., SPY as a market proxy).</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span
+                            class="flex-shrink-0 w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                        <span><strong>Generate your data:</strong> Use the <em>Ticker Data Generator</em> below to fetch
+                            historical prices and download as CSV.</span>
+                    </li>
+                    <li class="flex items-start gap-2">
+                        <span
+                            class="flex-shrink-0 w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                        <span><strong>Upload & analyze:</strong> Upload the downloaded CSV file to see comprehensive
+                            hedging analytics and stress tests.</span>
+                    </li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Upload Data Card -->
         <div class="p-10 bg-white shadow-xl rounded-2xl text-center max-w-lg w-full border border-slate-200">
             <h1 class="text-2xl font-bold text-slate-800 mb-2">Upload Data File</h1>
-            <p class="text-slate-500 mb-8">Upload your CSV containing <strong>Date</strong>, <strong>Portfolio
+            <p class="text-slate-500 mb-6">Upload your CSV containing <strong>Date</strong>, <strong>Portfolio
                     Close</strong>, and <strong>Hedge Close</strong>.</p>
+
+            <!-- Sample Data Preview -->
+            <div class="mb-6 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
+                <div class="bg-slate-100 px-3 py-2 border-b border-slate-200 flex items-center gap-2">
+                    <i data-lucide="table" class="w-4 h-4 text-slate-500"></i>
+                    <span class="text-xs font-semibold text-slate-600 uppercase tracking-wider">Expected Format</span>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs">
+                        <thead class="bg-slate-100 text-slate-600 font-semibold">
+                            <tr>
+                                <th class="px-3 py-2 text-left border-r border-slate-200">Date</th>
+                                <th class="px-3 py-2 text-right border-r border-slate-200">Portfolio Close</th>
+                                <th class="px-3 py-2 text-right">Hedge Close</th>
+                            </tr>
+                        </thead>
+                        <tbody class="text-slate-700 font-mono">
+                            <tr class="border-t border-slate-100">
+                                <td class="px-3 py-1.5 text-left border-r border-slate-100">1/3/22</td>
+                                <td class="px-3 py-1.5 text-right border-r border-slate-100">396.82</td>
+                                <td class="px-3 py-1.5 text-right">474.96</td>
+                            </tr>
+                            <tr class="border-t border-slate-100 bg-slate-25">
+                                <td class="px-3 py-1.5 text-left border-r border-slate-100">1/4/22</td>
+                                <td class="px-3 py-1.5 text-right border-r border-slate-100">390.23</td>
+                                <td class="px-3 py-1.5 text-right">477.71</td>
+                            </tr>
+                            <tr class="border-t border-slate-100">
+                                <td class="px-3 py-1.5 text-left border-r border-slate-100">1/5/22</td>
+                                <td class="px-3 py-1.5 text-right border-r border-slate-100">377.15</td>
+                                <td class="px-3 py-1.5 text-right">468.38</td>
+                            </tr>
+                            <tr class="border-t border-slate-100 text-slate-400 italic">
+                                <td class="px-3 py-1.5 text-center" colspan="3">... more rows</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <label class="block w-full cursor-pointer group">
                 <input type="file" id="csvFile" class="hidden" accept=".csv" />
                 <div
@@ -592,7 +670,7 @@
         </div>
 
         <!-- Divider -->
-        <div class="flex items-center gap-4 max-w-lg w-full my-6">
+        <div class="flex items-center gap-4 max-w-lg w-full my-8">
             <div class="flex-1 h-px bg-slate-200"></div>
             <span class="text-sm text-slate-400 font-medium">OR</span>
             <div class="flex-1 h-px bg-slate-200"></div>
@@ -647,6 +725,9 @@
             <p class="mt-4 text-xs text-slate-400">Data sourced from Yahoo Finance. Use tickers like QQQ, SPY, AAPL,
                 etc.</p>
         </div>
+
+        <!-- Bottom Spacer -->
+        <div class="h-16"></div>
     </div>
 
     <!-- 2. Investment View -->
