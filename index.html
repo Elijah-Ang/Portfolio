@@ -614,123 +614,136 @@
             </div>
         </div>
 
-        <!-- Upload Data Card -->
-        <div class="p-10 bg-white shadow-xl rounded-2xl text-center max-w-lg w-full border border-slate-200">
-            <h1 class="text-2xl font-bold text-slate-800 mb-2">Upload Data File</h1>
-            <p class="text-slate-500 mb-6">Upload your CSV containing <strong>Date</strong>, <strong>Portfolio
-                    Close</strong>, and <strong>Hedge Close</strong>.</p>
+        <!-- Cards Container - Side by Side -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 max-w-5xl w-full items-stretch">
 
-            <!-- Sample Data Preview -->
-            <div class="mb-6 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
-                <div class="bg-slate-100 px-3 py-2 border-b border-slate-200 flex items-center gap-2">
-                    <i data-lucide="table" class="w-4 h-4 text-slate-500"></i>
-                    <span class="text-xs font-semibold text-slate-600 uppercase tracking-wider">Expected Format</span>
-                </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-xs">
-                        <thead class="bg-slate-100 text-slate-600 font-semibold">
-                            <tr>
-                                <th class="px-3 py-2 text-left border-r border-slate-200">Date</th>
-                                <th class="px-3 py-2 text-right border-r border-slate-200">Portfolio Close</th>
-                                <th class="px-3 py-2 text-right">Hedge Close</th>
-                            </tr>
-                        </thead>
-                        <tbody class="text-slate-700 font-mono">
-                            <tr class="border-t border-slate-100">
-                                <td class="px-3 py-1.5 text-left border-r border-slate-100">1/3/22</td>
-                                <td class="px-3 py-1.5 text-right border-r border-slate-100">396.82</td>
-                                <td class="px-3 py-1.5 text-right">474.96</td>
-                            </tr>
-                            <tr class="border-t border-slate-100 bg-slate-25">
-                                <td class="px-3 py-1.5 text-left border-r border-slate-100">1/4/22</td>
-                                <td class="px-3 py-1.5 text-right border-r border-slate-100">390.23</td>
-                                <td class="px-3 py-1.5 text-right">477.71</td>
-                            </tr>
-                            <tr class="border-t border-slate-100">
-                                <td class="px-3 py-1.5 text-left border-r border-slate-100">1/5/22</td>
-                                <td class="px-3 py-1.5 text-right border-r border-slate-100">377.15</td>
-                                <td class="px-3 py-1.5 text-right">468.38</td>
-                            </tr>
-                            <tr class="border-t border-slate-100 text-slate-400 italic">
-                                <td class="px-3 py-1.5 text-center" colspan="3">... more rows</td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+            <!-- Upload Data Card -->
+            <div class="p-8 bg-white shadow-xl rounded-2xl text-center border border-slate-200 flex flex-col">
+                <h1 class="text-2xl font-bold text-slate-800 mb-2">Upload Data File</h1>
+                <p class="text-slate-500 mb-6">Upload your CSV containing <strong>Date</strong>, <strong>Portfolio
+                        Close</strong>, and <strong>Hedge Close</strong>.</p>
 
-            <label class="block w-full cursor-pointer group">
-                <input type="file" id="csvFile" class="hidden" accept=".csv" />
-                <div
-                    class="flex items-center justify-center w-full py-4 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-md shadow-indigo-200">
-                    <i data-lucide="file-text" class="w-5 h-5 mr-2"></i> Select CSV File
-                </div>
-            </label>
-            <p class="mt-4 text-xs text-slate-400">Supported formats: CSV. Auto-detection enabled.</p>
-        </div>
-
-        <!-- Divider -->
-        <div class="flex items-center gap-4 max-w-lg w-full my-8">
-            <div class="flex-1 h-px bg-slate-200"></div>
-            <span class="text-sm text-slate-400 font-medium">OR</span>
-            <div class="flex-1 h-px bg-slate-200"></div>
-        </div>
-
-        <!-- Ticker Data Generator Card -->
-        <div class="p-10 bg-white shadow-xl rounded-2xl text-center max-w-lg w-full border border-slate-200">
-            <h1 class="text-2xl font-bold text-slate-800 mb-2">Generate Ticker Data</h1>
-            <p class="text-slate-500 mb-6">Fetch historical closing prices from Yahoo Finance and download as CSV.</p>
-
-            <div class="space-y-4 text-left">
-                <!-- Portfolio Ticker -->
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Portfolio Ticker</label>
-                    <input type="text" id="portfolioTicker" placeholder="e.g., QQQ"
-                        class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition uppercase font-mono" />
-                </div>
-
-                <!-- Hedge Ticker -->
-                <div>
-                    <label class="block text-sm font-medium text-slate-700 mb-1">Hedge Ticker</label>
-                    <input type="text" id="hedgeTicker" placeholder="e.g., SPY"
-                        class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition uppercase font-mono" />
-                </div>
-
-                <!-- Date Range -->
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">From Date</label>
-                        <input type="date" id="fromDate"
-                            class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                <!-- Sample Data Preview -->
+                <div class="mb-6 bg-slate-50 border border-slate-200 rounded-lg overflow-hidden">
+                    <div class="bg-slate-100 px-3 py-2 border-b border-slate-200 flex items-center gap-2">
+                        <i data-lucide="table" class="w-4 h-4 text-slate-500"></i>
+                        <span class="text-xs font-semibold text-slate-600 uppercase tracking-wider">Expected
+                            Format</span>
                     </div>
-                    <div>
-                        <label class="block text-sm font-medium text-slate-700 mb-1">To Date</label>
-                        <input type="date" id="toDate"
-                            class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead class="bg-slate-100 text-slate-600 font-semibold">
+                                <tr>
+                                    <th class="px-3 py-2 text-left border-r border-slate-200">Date</th>
+                                    <th class="px-3 py-2 text-right border-r border-slate-200">Portfolio Close</th>
+                                    <th class="px-3 py-2 text-right">Hedge Close</th>
+                                </tr>
+                            </thead>
+                            <tbody class="text-slate-700 font-mono">
+                                <tr class="border-t border-slate-100">
+                                    <td class="px-3 py-1.5 text-left border-r border-slate-100">1/3/22</td>
+                                    <td class="px-3 py-1.5 text-right border-r border-slate-100">396.82</td>
+                                    <td class="px-3 py-1.5 text-right">474.96</td>
+                                </tr>
+                                <tr class="border-t border-slate-100 bg-slate-25">
+                                    <td class="px-3 py-1.5 text-left border-r border-slate-100">1/4/22</td>
+                                    <td class="px-3 py-1.5 text-right border-r border-slate-100">390.23</td>
+                                    <td class="px-3 py-1.5 text-right">477.71</td>
+                                </tr>
+                                <tr class="border-t border-slate-100">
+                                    <td class="px-3 py-1.5 text-left border-r border-slate-100">1/5/22</td>
+                                    <td class="px-3 py-1.5 text-right border-r border-slate-100">377.15</td>
+                                    <td class="px-3 py-1.5 text-right">468.38</td>
+                                </tr>
+                                <tr class="border-t border-slate-100 text-slate-400 italic">
+                                    <td class="px-3 py-1.5 text-center" colspan="3">... more rows</td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
+
+                <div class="mt-auto">
+                    <label class="block w-full cursor-pointer group">
+                        <input type="file" id="csvFile" class="hidden" accept=".csv" />
+                        <div
+                            class="flex items-center justify-center w-full py-4 px-6 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition font-medium shadow-md shadow-indigo-200">
+                            <i data-lucide="file-text" class="w-5 h-5 mr-2"></i> Select CSV File
+                        </div>
+                    </label>
+                    <p class="mt-4 text-xs text-slate-400">Supported formats: CSV. Auto-detection enabled.</p>
+                </div>
             </div>
 
-            <!-- Error Message -->
-            <div id="tickerError"
-                class="hidden mt-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm"></div>
-
-            <!-- Generate Button -->
-            <button onclick="generateAndDownloadCSV()" id="generateBtn"
-                class="w-full mt-6 py-4 px-6 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium shadow-md shadow-emerald-200 flex items-center justify-center gap-2">
-                <i data-lucide="download" class="w-5 h-5"></i>
-                Generate & Download CSV
-            </button>
-
-            <!-- Wait Time Notice -->
-            <div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
-                <i data-lucide="clock" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
-                <p class="text-xs text-amber-700"><strong>Please be patient:</strong> Fetching data from Yahoo Finance
-                    may take up to 30 seconds depending on the date range.</p>
+            <!-- Vertical Divider (visible on large screens) -->
+            <div class="hidden lg:flex absolute left-1/2 top-0 bottom-0 -translate-x-1/2 flex-col items-center justify-center pointer-events-none"
+                style="display: none;">
+                <div class="flex-1 w-px bg-slate-200"></div>
+                <span
+                    class="py-2 px-3 bg-slate-50 text-sm text-slate-400 font-medium rounded-full border border-slate-200">OR</span>
+                <div class="flex-1 w-px bg-slate-200"></div>
             </div>
 
-            <p class="mt-4 text-xs text-slate-400">Data sourced from Yahoo Finance. Use tickers like QQQ, SPY, AAPL,
-                etc.</p>
+            <!-- Ticker Data Generator Card -->
+            <div class="p-8 bg-white shadow-xl rounded-2xl text-center border border-slate-200 flex flex-col">
+                <h1 class="text-2xl font-bold text-slate-800 mb-2">Generate Ticker Data</h1>
+                <p class="text-slate-500 mb-6">Fetch historical closing prices from Yahoo Finance and download as CSV.
+                </p>
+
+                <div class="space-y-4 text-left flex-1">
+                    <!-- Portfolio Ticker -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Portfolio Ticker</label>
+                        <input type="text" id="portfolioTicker" placeholder="e.g., QQQ"
+                            class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition uppercase font-mono" />
+                    </div>
+
+                    <!-- Hedge Ticker -->
+                    <div>
+                        <label class="block text-sm font-medium text-slate-700 mb-1">Hedge Ticker</label>
+                        <input type="text" id="hedgeTicker" placeholder="e.g., SPY"
+                            class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition uppercase font-mono" />
+                    </div>
+
+                    <!-- Date Range -->
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">From Date</label>
+                            <input type="date" id="fromDate"
+                                class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-slate-700 mb-1">To Date</label>
+                            <input type="date" id="toDate"
+                                class="w-full px-4 py-3 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none transition" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Error Message -->
+                <div id="tickerError"
+                    class="hidden mt-4 p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 text-sm"></div>
+
+                <div class="mt-auto pt-4">
+                    <!-- Generate Button -->
+                    <button onclick="generateAndDownloadCSV()" id="generateBtn"
+                        class="w-full py-4 px-6 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition font-medium shadow-md shadow-emerald-200 flex items-center justify-center gap-2">
+                        <i data-lucide="download" class="w-5 h-5"></i>
+                        Generate & Download CSV
+                    </button>
+
+                    <!-- Wait Time Notice -->
+                    <div class="mt-4 p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
+                        <i data-lucide="clock" class="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5"></i>
+                        <p class="text-xs text-amber-700"><strong>Please be patient:</strong> Fetching data may take up
+                            to 30 seconds.</p>
+                    </div>
+
+                    <p class="mt-4 text-xs text-slate-400">Data sourced from Yahoo Finance. Use tickers like QQQ, SPY,
+                        AAPL, etc.</p>
+                </div>
+            </div>
+
         </div>
 
         <!-- Bottom Spacer -->
