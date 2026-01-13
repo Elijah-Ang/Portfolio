@@ -75,6 +75,10 @@
         let STATIC_RATIO = 1.0;
         let SELECTED_STRESS_INDEX = null;
 
+        // Added for dynamic labels
+        let GLOBAL_PORTFOLIO_TICKER = "PORTFOLIO";
+        let GLOBAL_HEDGE_TICKER = "HEDGE";
+
         let charts = {};
 
         // --- 1. Math & Data Parsing ---
@@ -102,6 +106,20 @@
         const parseCSV = (text) => {
             const lines = text.trim().split('\n');
             if (lines.length < 2) return null;
+
+            // --- HEADER PARSING FOR TICKERS ---
+            // Expected Header: Date,PortfolioClose (QQQ),HedgeClose (SPY)
+            const headerRow = parseCSVLine(lines[0]);
+            if (headerRow.length >= 3) {
+                // Regex to capture text inside parentheses
+                const tickerRegex = /\(([^)]+)\)/;
+
+                const pMatch = headerRow[1].match(tickerRegex);
+                const hMatch = headerRow[2].match(tickerRegex);
+
+                GLOBAL_PORTFOLIO_TICKER = pMatch ? pMatch[1] : "PORTFOLIO";
+                GLOBAL_HEDGE_TICKER = hMatch ? hMatch[1] : "HEDGE";
+            }
 
             const data = [];
             for (let i = 1; i < lines.length; i++) {
@@ -1296,7 +1314,7 @@
                 </div>
             `;
             container.innerHTML =
-                makeCard("Unhedged (QQQ)", kpis.unhedged, false) +
+                makeCard(`Unhedged (${GLOBAL_PORTFOLIO_TICKER})`, kpis.unhedged, false) +
                 makeCard(`Static Hedge (${ratio.toFixed(2)}x)`, kpis.static, true) +
                 makeCard("Dynamic Hedge (Beta)", kpis.dynamic, false);
         }
